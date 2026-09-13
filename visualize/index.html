@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>森多夫猜想 · 交互可视化</title>
+<style>
+  :root{
+    --bg:#0f1220; --panel:#171a2b; --ink:#e8eaf2; --muted:#9aa0b8;
+    --line:#2a2f48; --accent:#7cc4ff; --root:#5cc8ff; --crit:#ff7a8a;
+    --good:#7cf0a8; --bad:#ffd166; --disk:#22305a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    display:flex;min-height:100vh}
+  .stage{flex:1;display:flex;align-items:center;justify-content:center;padding:20px}
+  canvas{background:var(--panel);border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.45);
+    cursor:grab;touch-action:none}
+  canvas.dragging{cursor:grabbing}
+  .side{width:340px;padding:24px 22px;overflow-y:auto;border-left:1px solid var(--line)}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:18px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  button{background:#222845;color:var(--ink);border:1px solid var(--line);
+    padding:8px 12px;border-radius:9px;font-size:13px;cursor:pointer;transition:.15s}
+  button:hover{background:#2c3458;border-color:var(--accent)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:14px;margin-bottom:14px}
+  .card h3{margin:0 0 8px;font-size:14px;color:var(--accent)}
+  .legend{display:flex;gap:16px;font-size:13px;margin:10px 0 4px}
+  .dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+  .root-dot{background:var(--root)}
+  .crit-dot{background:var(--crit)}
+  .status{font-size:15px;font-weight:600;padding:10px 12px;border-radius:9px;text-align:center}
+  .ok{background:rgba(124,240,168,.12);color:var(--good);border:1px solid rgba(124,240,168,.3)}
+  .warn{background:rgba(255,209,102,.12);color:var(--bad);border:1px solid rgba(255,209,102,.3)}
+  .math{font-family:"Cambria Math",Georgia,serif;font-style:italic;color:var(--accent)}
+  .roots-list{font-size:12px;color:var(--muted);line-height:1.7;
+    font-family:ui-monospace,Consolas,monospace}
+  .roots-list b{color:var(--ink)}
+  .gap{color:var(--bad)}
+  .hint{font-size:12px;color:var(--muted);line-height:1.6}
+  .foot{font-size:11px;color:var(--muted);margin-top:18px;line-height:1.6}
+  a{color:var(--accent)}
+  .pill{display:inline-block;background:#222845;border:1px solid var(--line);
+    border-radius:20px;padding:2px 10px;font-size:11px;color:var(--muted);margin:2px 4px 2px 0}
+</style>
+</head>
+<body>
+<div class="stage">
+  <canvas id="cv" width="640" height="640"></canvas>
+</div>
+<div class="side">
+  <h1>森多夫猜想</h1>
+  <div class="sub">
+    若多项式所有根 <span class="math">z₁,…,zₙ</span> 都位于闭单位圆盘内，
+    则对每个根 <span class="math">zᵢ</span>，半径为 1 的圆内必有一个临界点
+    <span class="math">ξ</span>（即 <span class="math">p′(ξ)=0</span>）。
+  </div>
+
+  <div class="card">
+    <h3>操作</h3>
+    <div class="row">
+      <button onclick="addRoot()">+ 添加根</button>
+      <button onclick="removeRoot()">− 删除根</button>
+      <button onclick="reset(3)">重置 (n=3)</button>
+    </div>
+    <div class="row">
+      <button onclick="presetExtremal()">极端配置</button>
+      <button onclick="presetRandom()">随机根</button>
+      <button onclick="presetSymmetric()">正多边形</button>
+    </div>
+    <div class="hint">
+      拖动 <span class="dot root-dot"></span> 蓝色圆点移动根；
+      <span class="dot crit-dot"></span> 红点为自动算出的临界点。
+      每个根周围的淡蓝圆是半径 1 的范围。
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>图例与状态</h3>
+    <div class="legend">
+      <span><span class="dot root-dot"></span>根 zᵢ</span>
+      <span><span class="dot crit-dot"></span>临界点 ξ</span>
+    </div>
+    <div id="status" class="status ok">猜想成立 ✓</div>
+  </div>
+
+  <div class="card">
+    <h3>各根到最近临界点的距离</h3>
+    <div id="rootslist" class="roots-list"></div>
+  </div>
+
+  <div class="card">
+    <h3>说明</h3>
+    <div class="hint">
+      <p><b>森多夫猜想</b>断言：任意根的 1-邻域内都至少有一个临界点。
+      若状态变红，说明某个根周围半径 1 内没有临界点——你将找到一个反例
+      （数学界等待了 60 多年，至今无人做到）。</p>
+      <p>临界点由高斯–卢卡斯定理保证位于根的凸包内；
+      森多夫猜想给出的是<b>逐根、定量</b>的加强。</p>
+      <p>根的求导根使用 <b>Aberth 方法</b>在浏览器内实时数值求解。</p>
+    </div>
+  </div>
+
+  <div class="foot">
+    配套科普文：《一个拖了 60 多年的猜想，被 AI 时代的独立数学家攻破了》<br>
+    证明：Bartłomiej Mazur (arXiv:2507.19539, 2025.07) ·
+    解读：<a href="https://terrytao.wordpress.com/2025/07/26/mazurs-proof-of-sendovs-conjecture/" target="_blank">陶哲轩博客</a>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+const CX = W/2, CY = H/2, R = 250; // unit disk radius in px
+let scale = R; // pixels per unit
+
+let roots = [];      // complex roots in math coords
+let crits = [];      // critical points in math coords
+let drag = -1;
+
+function toScreen(z){ return [CX + z.re*scale, CY - z.im*scale]; }
+function toMath(x,y){ return {re:(x-CX)/scale, im:(CY-y)/scale}; }
+
+// ---------- complex helpers ----------
+const C = {
+  add:(a,b)=>({re:a.re+b.re, im:a.im+b.im}),
+  sub:(a,b)=>({re:a.re-b.re, im:a.im-b.im}),
+  mul:(a,b)=>({re:a.re*b.re-a.im*b.im, im:a.re*b.im+a.im*b.re}),
+  div:(a,b)=>{const d=b.re*b.re+b.im*b.im;
+    return {re:(a.re*b.re+a.im*b.im)/d, im:(a.im*b.re-a.re*b.im)/d};},
+  abs:a=>Math.hypot(a.re,a.im),
+  conj:a=>({re:a.re, im:-a.im}),
+  scale:(a,s)=>({re:a.re*s, im:a.im*s}),
+};
+
+// ---------- polynomial from roots, derivative, Aberth root finder ----------
+// coefficients a[0] + a[1] z + ... + a[n] z^n
+function polyFromRoots(roots){
+  let a=[{re:1,im:0}];
+  for(const r of roots){
+    // multiply by (z - r)
+    const na = new Array(a.length+1).fill(null).map(()=>({re:0,im:0}));
+    for(let i=0;i<a.length;i++){
+      na[i+1] = C.add(na[i+1], a[i]);
+      na[i] = C.sub(na[i], C.mul(a[i], r));
+    }
+    a = na;
+  }
+  return a;
+}
+function derivative(a){
+  const d=[];
+  for(let i=1;i<a.length;i++) d.push(C.scale(a[i], i));
+  return d;
+}
+// evaluate poly given complex coefficients
+function evalPoly(a, z){
+  let s={re:0,im:0}, zp={re:1,im:0};
+  for(let i=0;i<a.length;i++){ s=C.add(s,C.mul(a[i],zp)); zp=C.mul(zp,z); }
+  return s;
+}
+// Aberth method
+function aberth(a, n){
+  if(n===0) return [];
+  // initial guesses on a circle
+  const guesses=[];
+  const rad = Math.pow(C.abs(a[0])/C.abs(a[n]), 1/n) || 0.9;
+  for(let i=0;i<n;i++){
+    const t = 2*Math.PI*i/n + 0.1;
+    guesses.push({re:rad*Math.cos(t), im:rad*Math.sin(t)});
+  }
+  for(let iter=0; iter<200; iter++){
+    let maxdx=0;
+    for(let i=0;i<n;i++){
+      const z=guesses[i];
+      const pz=evalPoly(a,z);
+      if(C.abs(pz)<1e-14) continue;
+      const dz=C.scale(evalPoly(derivative(a),z),1); // p'(z)
+      let ratio=C.div(dz,pz);
+      let sum={re:0,im:0};
+      for(let j=0;j<n;j++) if(i!==j){
+        sum=C.add(sum, C.div({re:1,im:0}, C.sub(z,guesses[j])));
+      }
+      const off=C.sub(ratio, sum);
+      if(C.abs(off)<1e-14) continue;
+      const delta=C.div({re:1,im:0}, off);
+      guesses[i]=C.sub(z, delta);
+      maxdx=Math.max(maxdx, C.abs(delta));
+    }
+    if(maxdx<1e-12) break;
+  }
+  return guesses;
+}
+
+function recompute(){
+  if(roots.length>=1){
+    const a = polyFromRoots(roots);
+    const d = derivative(a);
+    crits = d.length>=1 ? aberth(d, d.length-1) : [];
+  } else crits=[];
+}
+
+// ---------- rendering ----------
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // grid
+  ctx.strokeStyle='rgba(255,255,255,.04)';
+  ctx.lineWidth=1;
+  for(let i=-2;i<=2;i++){
+    const [x1,y1]=toScreen({re:i,im:-2});
+    const [x2,y2]=toScreen({re:i,im:2});
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    const [x3,y3]=toScreen({re:-2,im:i});
+    const [x4,y4]=toScreen({re:2,im:i});
+    ctx.beginPath();ctx.moveTo(x3,y3);ctx.lineTo(x4,y4);ctx.stroke();
+  }
+  // unit disk
+  ctx.fillStyle='rgba(124,196,255,.06)';
+  ctx.beginPath();ctx.arc(CX,CY,R,0,2*Math.PI);ctx.fill();
+  ctx.strokeStyle='rgba(124,196,255,.35)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(CX,CY,R,0,2*Math.PI);ctx.stroke();
+
+  // radius-1 circles around each root
+  ctx.strokeStyle='rgba(124,196,255,.22)';
+  ctx.lineWidth=1;
+  for(const z of roots){
+    const [x,y]=toScreen(z);
+    ctx.beginPath();ctx.arc(x,y,scale,0,2*Math.PI);ctx.stroke();
+  }
+
+  // lines from each root to nearest critical point
+  let allOk=true;
+  for(const z of roots){
+    let best=null, bd=1e18;
+    for(const c of crits){
+      const dd=C.abs(C.sub(z,c));
+      if(dd<bd){bd=dd;best=c;}
+    }
+    if(best){
+      if(bd>1+1e-6) allOk=false;
+      const [x1,y1]=toScreen(z);
+      const [x2,y2]=toScreen(best);
+      ctx.strokeStyle = bd>1+1e-6 ? 'rgba(255,209,102,.8)' : 'rgba(124,240,168,.55)';
+      ctx.lineWidth = bd>1+1e-6 ? 2 : 1.2;
+      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    } else allOk=false;
+  }
+
+  // critical points
+  for(const c of crits){
+    const [x,y]=toScreen(c);
+    ctx.fillStyle='#ff7a8a';
+    ctx.beginPath();ctx.arc(x,y,6,0,2*Math.PI);ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,.4)';ctx.lineWidth=1;ctx.stroke();
+  }
+  // roots
+  for(let i=0;i<roots.length;i++){
+    const [x,y]=toScreen(roots[i]);
+    ctx.fillStyle='#5cc8ff';
+    ctx.beginPath();ctx.arc(x,y,8,0,2*Math.PI);ctx.fill();
+    ctx.strokeStyle='#0f1220';ctx.lineWidth=2;ctx.stroke();
+    ctx.fillStyle='#e8eaf2';ctx.font='bold 11px sans-serif';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('z'+(i+1), x, y-16);
+  }
+
+  // status
+  const st=document.getElementById('status');
+  if(roots.length<2){
+    st.className='status warn';
+    st.textContent='至少需要 2 个根';
+  } else if(allOk){
+    st.className='status ok';
+    st.textContent='猜想成立 ✓  每个根的 1-邻域内都有临界点';
+  } else {
+    st.className='status warn';
+    st.textContent='⚠ 有根的 1-邻域内没有临界点（若这能成立……就是反例）';
+  }
+
+  // list
+  let html='';
+  for(let i=0;i<roots.length;i++){
+    const z=roots[i];
+    let best=null, bd=1e18;
+    for(const c of crits){const dd=C.abs(C.sub(z,c)); if(dd<bd){bd=dd;best=c;}}
+    const cls = bd>1+1e-6 ? 'gap' : '';
+    html += `<div>z${i+1} = ${fmt(z)} &nbsp;→&nbsp; <span class="${cls}">最近临界点距离 ${bd.toFixed(4)}</span></div>`;
+  }
+  document.getElementById('rootslist').innerHTML=html;
+}
+function fmt(z){
+  const a=z.re.toFixed(2), b=Math.abs(z.im).toFixed(2);
+  if(Math.abs(z.im)<1e-6) return `<b>${a}</b>`;
+  const s=z.im>=0?'+':'−';
+  return `<b>${a} ${s} ${b}i</b>`;
+}
+
+// ---------- interaction ----------
+function pos(e){
+  const r=cv.getBoundingClientRect();
+  const t=e.touches?e.touches[0]:e;
+  return {x:(t.clientX-r.left)*(W/r.width), y:(t.clientY-r.top)*(H/r.height)};
+}
+function hitTest(x,y){
+  for(let i=roots.length-1;i>=0;i--){
+    const [sx,sy]=toScreen(roots[i]);
+    if(Math.hypot(x-sx,y-sy)<14) return i;
+  }
+  return -1;
+}
+cv.addEventListener('pointerdown',e=>{
+  const {x,y}=pos(e);
+  drag=hitTest(x,y);
+  if(drag>=0){cv.classList.add('dragging');cv.setPointerCapture(e.pointerId);}
+});
+cv.addEventListener('pointermove',e=>{
+  if(drag<0) return;
+  const {x,y}=pos(e);
+  let z=toMath(x,y);
+  // constrain roots to closed unit disk (conjecture hypothesis)
+  const m=C.abs(z);
+  if(m>1) z=C.scale(z,1/m);
+  roots[drag]=z;
+  recompute();draw();
+});
+cv.addEventListener('pointerup',e=>{drag=-1;cv.classList.remove('dragging');});
+cv.addEventListener('pointercancel',()=>{drag=-1;});
+
+function addRoot(){
+  // place a new root at a random spot inside disk
+  const th=Math.random()*2*Math.PI, rr=0.3+Math.random()*0.6;
+  roots.push({re:rr*Math.cos(th), im:rr*Math.sin(th)});
+  recompute();draw();
+}
+function removeRoot(){ if(roots.length>0){roots.pop();recompute();draw();} }
+function reset(n){
+  roots=[];
+  for(let i=0;i<n;i++){
+    const th=2*Math.PI*i/n + 0.3;
+    roots.push({re:0.7*Math.cos(th), im:0.7*Math.sin(th)});
+  }
+  recompute();draw();
+}
+function presetRandom(){
+  const n=3+Math.floor(Math.random()*5);
+  roots=[];
+  for(let i=0;i<n;i++){
+    const th=Math.random()*2*Math.PI, rr=Math.sqrt(Math.random())*0.95;
+    roots.push({re:rr*Math.cos(th), im:rr*Math.sin(th)});
+  }
+  recompute();draw();
+}
+function presetSymmetric(){
+  const n=4+Math.floor(Math.random()*4);
+  roots=[];
+  for(let i=0;i<n;i++){
+    const th=2*Math.PI*i/n;
+    roots.push({re:0.9*Math.cos(th), im:0.9*Math.sin(th)});
+  }
+  recompute();draw();
+}
+function presetExtremal(){
+  // a near-extremal config: roots at 1 and others clustered to push a critical point far
+  roots=[
+    {re:1,im:0},
+    {re:0.85,im:0.25},
+    {re:0.85,im:-0.25},
+    {re:0.5,im:0.5},
+    {re:0.5,im:-0.5},
+  ];
+  recompute();draw();
+}
+
+reset(3);
+</script>
+</body>
+</html>
